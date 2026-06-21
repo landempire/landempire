@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Империя Земли</title>
+  <style>
+    body { margin: 0; background: #050515; color: white; font-family: sans-serif; text-align: center; }
+    h2 { color: #00ffaa; margin-top: 20px; }
+    
+    /* Сетка для стран */
+    .map-container {
+      display: flex; flex-wrap: wrap; justify-content: center;
+      max-width: 900px; margin: 30px auto; padding: 10px;
+    }
+    
+    /* Кнопка-страна */
+    .country-card {
+      background: rgba(0, 100, 255, 0.2); border: 2px solid #0055ff;
+      border-radius: 8px; margin: 8px; padding: 15px; width: 180px;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .country-card:hover { transform: scale(1.05); background: rgba(0, 100, 255, 0.4); }
+    
+    /* Стили для купленных стран */
+    .owned { border-color: #ff3366; background: rgba(255, 51, 102, 0.3) !important; }
+
+    /* Окно покупки */
+    #buy-modal {
+      display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: #111125; border: 2px solid #00ffaa; border-radius: 12px; padding: 25px; width: 280px;
+    }
+    .apple-pay-btn {
+      width: 100%; height: 40px; background: white; color: black;
+      border: none; border-radius: 6px; font-weight: bold; margin-top: 15px; cursor: pointer;
+    }
+    .close-btn { float: right; cursor: pointer; color: #aaa; }
+  </style>
+</head>
+<body>
+
+  <h2>🌍 Империя Земли: Купи Страну</h2>
+  <p>Выберите страну из списка ниже, чтобы выкупить её и разместить рекламу</p>
+
+  <!-- Сетка со странами из базы данных -->
+  <div class="map-container" id="map">
+    <p id="loading-text">Загрузка карты мира из базы данных...</p>
+  </div>
+
+  <!-- Окно покупки -->
+  <div id="buy-modal">
+    <span class="close-btn" onclick="closeModal()">&times;</span>
+    <h3 id="modal-country-name" style="color: #00ffaa; margin-top: 0;">Страна</h3>
+    <p>Цена владения: <b>$50</b></p>
+    <input type="text" id="user-name" placeholder="Ваше имя / Рекламодатель" style="width:100%; padding:8px; margin-bottom:10px; background:#222; color:white; border:1px solid #444; box-sizing:border-box; border-radius:6px;">
+    <input type="text" id="user-link" placeholder="Ссылка на товар / Telegram" style="width:100%; padding:8px; background:#222; color:white; border:1px solid #444; box-sizing:border-box; border-radius:6px;">
+    <button class="apple-pay-btn" onclick="processPayment()"> Купить с Apple Pay</button>
+  </div>
+
+  <script>
+    // Прямое подключение без внешних библиотек
+    const API_URL = "https://supabase.co";
+    const API_KEY = "sb_publishable_FxWSvmdf0ihZmg42kd5ptw_yjrZ9lmc";
+
+    let currentCountries = [];
+    let selectedCountryId = null;
+
+    // 1. Загрузка данных через стандартный fetch
+    async function loadCountriesFromDatabase() {
+      try {
+        const response = await fetch(`${API_URL}?select=*&order=id.asc`, {
+          method: "GET",
+          headers: {
+            "apikey": API_KEY,
+            "Authorization": `Bearer ${API_KEY}`
+          }
+        });
+
+        if (!response.ok) throw new Error(" Ошибка ответа сервера");
+        
+        currentCountries = await response.json();
+        drawMap();
+      } catch (error) {
+        console.error("Ошибка загрузки:", error);
+        document.getElementById('map').innerHTML = `<p style="color:red;">Не удалось подключиться к базе данных. Попробуйте включить/выключить VPN и обновить страницу.</p>`;
+      }
+    }
+
+    // 2. Отрисовка карточек
+    function drawMap() {
+      const mapDiv = document.getElementById('map');
+      mapDiv.innerHTML = ''; 
+
+      if(currentCountries.length === 0) {
+        mapDiv.innerHTML = '<p>В базе пока нет стран. Добавьте их в панели Supabase!</p>';
+        return;
+      }
+      
+      currentCountries.forEach((country) => {
+        const isOwned = country.owner && country.owner !== "Вы?" && country.owner !== "Свободна" && country.owner !== "";
+        const card = document.createElement('div');
+        card.className = 'country-card' + (isOwned ? ' owned' : '');
+        card.innerHTML = `
+          <h3 style="margin:0 0 10px 0;">${country.name}</h3>
+          <p style="margin:0; font-size:12px; color:#aaa;">Владелец:</p>
+          <p style="margin:5px 0 0 0; font-weight:bold; color:${isOwned ? '#ff3366' : '#00ffaa'}">${country.owner || 'Свободна'}</p>
+        `;
+        
+        card.onclick = () => openModal(country.id);
+        mapDiv.appendChild(card);
+      });
+    }
+
+    function openModal(id) {
+      const country = currentCountries.find(c => c.id === id);
+      selectedCountryId = id;
+      
+      document.getElementById('modal-country-name').innerText = country.name;
+      
+      const isOwned = country.owner && country.owner !== "Вы?" && country.owner !== "Свободна" && country.owner !== "";
+      if(isOwned) {
+        alert(`Эта страна уже куплена брендом: ${country.owner}!\n\nРекламная ссылка: ${country.link || 'Не указана'}`);
+      } else {
+        document.getElementById('buy-modal').style.display = 'block';
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('buy-modal').style.display = 'none';
+    }
+
+    // 3. Обновление данных при покупке
+    async function processPayment() {
+      const name = document.getElementById('user-name').value;
+      const link = document.getElementById('user-link').value || 'https://t.me';
+      
+      if(!name) return alert('Введите ваше имя или название бренда для рекламы!');
+      
+      try {
+        const response = await fetch(`${API_URL}?id=eq.${selectedCountryId}`, {
+          method: "PATCH",
+          headers: {
+            "apikey": API_KEY,
+            "Authorization": `Bearer ${API_KEY}`,
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal"
+          },
+          body: JSON.stringify({ owner: name, link: link, owned: true })
+        });
+
+        if (!response.ok) throw new Error("Не удалось записать данные");
+
+        alert('Поздравляем! Страна успешно выкуплена, данные сохранены в базе!');
+        closeModal();
+        loadCountriesFromDatabase();
+      } catch (error) {
+        alert('Ошибка при сохранении покупки: ' + error.message);
+      }
+    }
+
+    // Запуск
+    loadCountriesFromDatabase();
+  </script>
+</body>
+</html>
